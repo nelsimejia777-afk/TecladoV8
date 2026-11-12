@@ -1,0 +1,592 @@
+name: Build Teclado Voz
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Crear archivos de Gradle y manifest
+        run: |
+          mkdir -p "$(dirname 'settings.gradle.kts')"
+          cat > 'settings.gradle.kts' <<'__FIN_ARCHIVO__'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "TecladoVoz"
+          include(":app")
+          __FIN_ARCHIVO__
+          mkdir -p "$(dirname 'build.gradle.kts')"
+          cat > 'build.gradle.kts' <<'__FIN_ARCHIVO__'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          __FIN_ARCHIVO__
+          mkdir -p "$(dirname 'gradle.properties')"
+          cat > 'gradle.properties' <<'__FIN_ARCHIVO__'
+          org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          kotlin.code.style=official
+          __FIN_ARCHIVO__
+          mkdir -p "$(dirname 'app/build.gradle.kts')"
+          cat > 'app/build.gradle.kts' <<'__FIN_ARCHIVO__'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.tecladovoz"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.tecladovoz"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                      signingConfig = signingConfigs.getByName("debug")
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+              lint {
+                  checkReleaseBuilds = false
+                  abortOnError = false
+              }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+          }
+          __FIN_ARCHIVO__
+          mkdir -p "$(dirname 'app/src/main/AndroidManifest.xml')"
+          cat > 'app/src/main/AndroidManifest.xml' <<'__FIN_ARCHIVO__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.INTERNET" />
+
+              <!-- Necesario en Android 11+ para encontrar el servicio de reconocimiento de voz -->
+              <queries>
+                  <intent>
+                      <action android:name="android.speech.RecognitionService" />
+                  </intent>
+              </queries>
+
+              <application
+                  android:allowBackup="false"
+                  android:icon="@drawable/ic_launcher"
+                  android:label="Teclado Voz"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <service
+                      android:name=".KeyboardService"
+                      android:exported="true"
+                      android:label="Teclado Voz"
+                      android:permission="android.permission.BIND_INPUT_METHOD">
+                      <intent-filter>
+                          <action android:name="android.view.InputMethod" />
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.view.im"
+                          android:resource="@xml/method" />
+                  </service>
+              </application>
+          </manifest>
+          __FIN_ARCHIVO__
+          mkdir -p "$(dirname 'app/src/main/res/xml/method.xml')"
+          cat > 'app/src/main/res/xml/method.xml' <<'__FIN_ARCHIVO__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <input-method xmlns:android="http://schemas.android.com/apk/res/android"
+              android:settingsActivity="com.tecladovoz.MainActivity" />
+          __FIN_ARCHIVO__
+          mkdir -p "$(dirname 'app/src/main/res/drawable/ic_launcher.xml')"
+          cat > 'app/src/main/res/drawable/ic_launcher.xml' <<'__FIN_ARCHIVO__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="48dp"
+              android:height="48dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path
+                  android:fillColor="#1A73E8"
+                  android:pathData="M4,0h16a4,4 0 0 1 4,4v16a4,4 0 0 1 -4,4h-16a4,4 0 0 1 -4,-4v-16a4,4 0 0 1 4,-4z" />
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M12,14c1.66,0 2.99,-1.34 2.99,-3L15,5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v6c0,1.66 1.34,3 3,3zM17.3,11c0,3 -2.54,5.1 -5.3,5.1S6.7,14 6.7,11L5,11c0,3.41 2.72,6.23 6,6.72L11,21h2v-3.28c3.28,-0.48 6,-3.3 6,-6.72h-1.7z" />
+          </vector>
+          __FIN_ARCHIVO__
+
+      - name: Crear código Kotlin
+        run: |
+          mkdir -p "$(dirname 'app/src/main/java/com/tecladovoz/MainActivity.kt')"
+          cat > 'app/src/main/java/com/tecladovoz/MainActivity.kt' <<'__FIN_ARCHIVO__'
+          package com.tecladovoz
+
+          import android.Manifest
+          import android.app.Activity
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.net.Uri
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.view.ViewGroup
+          import android.view.inputmethod.InputMethodManager
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import androidx.core.app.ActivityCompat
+          import androidx.core.content.ContextCompat
+
+          class MainActivity : Activity() {
+
+              private lateinit var statusView: TextView
+
+              private fun dp(value: Int): Int =
+                  (value * resources.displayMetrics.density).toInt()
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setBackgroundColor(Color.parseColor("#202124"))
+                      setPadding(dp(24), dp(48), dp(24), dp(24))
+                  }
+
+                  val title = TextView(this).apply {
+                      text = "Teclado Voz"
+                      textSize = 28f
+                      setTextColor(Color.WHITE)
+                  }
+                  root.addView(title)
+
+                  statusView = TextView(this).apply {
+                      textSize = 16f
+                      setTextColor(Color.WHITE)
+                      setPadding(0, dp(16), 0, dp(16))
+                  }
+                  root.addView(statusView)
+
+                  root.addView(makeButton("1. Conceder permiso del micrófono") {
+                      ActivityCompat.requestPermissions(
+                          this,
+                          arrayOf(Manifest.permission.RECORD_AUDIO),
+                          REQUEST_AUDIO
+                      )
+                  })
+                  root.addView(makeButton("   Abrir ajustes de la app (si no aparece el permiso)") {
+                      startActivity(
+                          Intent(
+                              Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                              Uri.fromParts("package", packageName, null)
+                          )
+                      )
+                  })
+                  root.addView(makeButton("2. Activar el teclado en Ajustes") {
+                      startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+                  })
+                  root.addView(makeButton("3. Elegir Teclado Voz como teclado") {
+                      val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                      imm.showInputMethodPicker()
+                  })
+
+                  setContentView(ScrollView(this).apply { addView(root) })
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  refreshStatus()
+              }
+
+              override fun onRequestPermissionsResult(
+                  requestCode: Int,
+                  permissions: Array<out String>,
+                  grantResults: IntArray
+              ) {
+                  super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+                  refreshStatus()
+              }
+
+              private fun refreshStatus() {
+                  val micOk = ContextCompat.checkSelfPermission(
+                      this, Manifest.permission.RECORD_AUDIO
+                  ) == PackageManager.PERMISSION_GRANTED
+
+                  val enabledMethods = Settings.Secure.getString(
+                      contentResolver, Settings.Secure.ENABLED_INPUT_METHODS
+                  )
+                  val keyboardOk = enabledMethods?.contains(packageName) == true
+
+                  statusView.text =
+                      (if (micOk) "✅ Permiso del micrófono concedido" else "❌ Falta el permiso del micrófono") +
+                      "\n" +
+                      (if (keyboardOk) "✅ Teclado activado" else "❌ Teclado sin activar")
+              }
+
+              private fun makeButton(label: String, onClick: () -> Unit): Button =
+                  Button(this).apply {
+                      text = label
+                      isAllCaps = false
+                      layoutParams = LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.WRAP_CONTENT
+                      ).apply { topMargin = dp(8) }
+                      setOnClickListener { onClick() }
+                  }
+
+              companion object {
+                  private const val REQUEST_AUDIO = 1001
+              }
+          }
+          __FIN_ARCHIVO__
+          mkdir -p "$(dirname 'app/src/main/java/com/tecladovoz/KeyboardService.kt')"
+          cat > 'app/src/main/java/com/tecladovoz/KeyboardService.kt' <<'__FIN_ARCHIVO__'
+          package com.tecladovoz
+
+          import android.Manifest
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.graphics.drawable.GradientDrawable
+          import android.inputmethodservice.InputMethodService
+          import android.os.Bundle
+          import android.os.Handler
+          import android.os.Looper
+          import android.speech.RecognitionListener
+          import android.speech.RecognizerIntent
+          import android.speech.SpeechRecognizer
+          import android.view.Gravity
+          import android.view.KeyEvent
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.inputmethod.InputMethodManager
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import androidx.core.content.ContextCompat
+          import java.util.Locale
+
+          class KeyboardService : InputMethodService() {
+
+              private var recognizer: SpeechRecognizer? = null
+              private var listening = false
+              private var statusView: TextView? = null
+              private var micButton: Button? = null
+
+              private val listener = object : RecognitionListener {
+                  override fun onReadyForSpeech(params: Bundle?) {
+                      setStatus("Escuchando… habla ahora")
+                  }
+
+                  override fun onBeginningOfSpeech() {}
+
+                  override fun onRmsChanged(rmsdB: Float) {}
+
+                  override fun onBufferReceived(buffer: ByteArray?) {}
+
+                  override fun onEndOfSpeech() {
+                      setStatus("Procesando…")
+                  }
+
+                  override fun onError(error: Int) {
+                      handleError(error)
+                  }
+
+                  override fun onResults(results: Bundle?) {
+                      setListening(false)
+                      val text = results
+                          ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                          ?.firstOrNull()
+                      if (text.isNullOrBlank()) {
+                          setStatus("No se entendió nada. Intenta de nuevo.")
+                          return
+                      }
+                      currentInputConnection?.commitText(text + " ", 1)
+                      setStatus(READY_MESSAGE)
+                  }
+
+                  override fun onPartialResults(partialResults: Bundle?) {}
+
+                  override fun onEvent(eventType: Int, params: Bundle?) {}
+              }
+
+              private fun dp(value: Int): Int =
+                  (value * resources.displayMetrics.density).toInt()
+
+              override fun onCreateInputView(): View {
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setBackgroundColor(Color.parseColor("#202124"))
+                      setPadding(dp(8), dp(8), dp(8), dp(8))
+                  }
+
+                  val status = TextView(this).apply {
+                      text = READY_MESSAGE
+                      textSize = 14f
+                      gravity = Gravity.CENTER
+                      setTextColor(Color.WHITE)
+                      setPadding(0, dp(4), 0, dp(8))
+                  }
+                  statusView = status
+                  root.addView(
+                      status,
+                      LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.WRAP_CONTENT
+                      )
+                  )
+
+                  val mic = makeButton("🎤  Dictar", "#1A73E8") { toggleListening() }
+                  micButton = mic
+                  root.addView(
+                      mic,
+                      LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          dp(64)
+                      )
+                  )
+
+                  val row = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                  }
+                  row.addView(makeButton("⌨", "#3C4043") { showPicker() }, rowParams(1f))
+                  row.addView(makeButton("⌫", "#3C4043") { doBackspace() }, rowParams(1f))
+                  row.addView(makeButton("Espacio", "#3C4043") { commit(" ") }, rowParams(2f))
+                  row.addView(makeButton("↵", "#3C4043") { doEnter() }, rowParams(1f))
+                  root.addView(
+                      row,
+                      LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.WRAP_CONTENT
+                      ).apply { topMargin = dp(8) }
+                  )
+
+                  return root
+              }
+
+              override fun onFinishInputView(finishingInput: Boolean) {
+                  super.onFinishInputView(finishingInput)
+                  recognizer?.cancel()
+                  setListening(false)
+                  setStatus(READY_MESSAGE)
+              }
+
+              override fun onDestroy() {
+                  recognizer?.destroy()
+                  recognizer = null
+                  super.onDestroy()
+              }
+
+              // ---------- Voz ----------
+
+              private fun toggleListening() {
+                  if (listening) stopListening() else startListening()
+              }
+
+              private fun startListening() {
+                  val granted = ContextCompat.checkSelfPermission(
+                      this, Manifest.permission.RECORD_AUDIO
+                  ) == PackageManager.PERMISSION_GRANTED
+
+                  if (!granted) {
+                      setStatus("Falta el permiso del micrófono. Concédelo en la app Teclado Voz.")
+                      val intent = Intent(this, MainActivity::class.java)
+                          .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                      startActivity(intent)
+                      return
+                  }
+
+                  if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+                      setStatus("No hay servicio de reconocimiento de voz en este dispositivo.")
+                      return
+                  }
+
+                  val active = recognizer ?: SpeechRecognizer.createSpeechRecognizer(this).also {
+                      it.setRecognitionListener(listener)
+                      recognizer = it
+                  }
+
+                  val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                      putExtra(
+                          RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                          RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                      )
+                      putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                      putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                  }
+
+                  setListening(true)
+                  setStatus("Preparando…")
+                  active.startListening(intent)
+              }
+
+              private fun stopListening() {
+                  setStatus("Procesando…")
+                  recognizer?.stopListening()
+              }
+
+              private fun handleError(error: Int) {
+                  setListening(false)
+                  val message = when (error) {
+                      SpeechRecognizer.ERROR_NO_MATCH ->
+                          "No se entendió. Intenta de nuevo."
+                      SpeechRecognizer.ERROR_SPEECH_TIMEOUT ->
+                          "No se escuchó nada. Intenta de nuevo."
+                      SpeechRecognizer.ERROR_AUDIO ->
+                          "Error de audio del micrófono."
+                      SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
+                          "Error de red. Revisa tu conexión."
+                      SpeechRecognizer.ERROR_SERVER ->
+                          "Error del servidor de voz."
+                      SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
+                          "Falta el permiso del micrófono. Concédelo en la app Teclado Voz."
+                      else -> {
+                          resetRecognizer()
+                          "Error de voz (código " + error + "). Intenta de nuevo."
+                      }
+                  }
+                  setStatus(message)
+              }
+
+              private fun resetRecognizer() {
+                  Handler(Looper.getMainLooper()).post {
+                      recognizer?.destroy()
+                      recognizer = null
+                  }
+              }
+
+              // ---------- Teclas ----------
+
+              private fun commit(text: String) {
+                  currentInputConnection?.commitText(text, 1)
+              }
+
+              private fun doBackspace() {
+                  val ic = currentInputConnection ?: return
+                  val selected = ic.getSelectedText(0)
+                  if (selected.isNullOrEmpty()) {
+                      sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+                  } else {
+                      ic.commitText("", 1)
+                  }
+              }
+
+              private fun doEnter() {
+                  if (!sendDefaultEditorAction(true)) {
+                      sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
+                  }
+              }
+
+              private fun showPicker() {
+                  val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                  imm.showInputMethodPicker()
+              }
+
+              // ---------- Interfaz ----------
+
+              private fun setStatus(message: String) {
+                  statusView?.text = message
+              }
+
+              private fun setListening(value: Boolean) {
+                  listening = value
+                  micButton?.text = if (value) "⏹  Detener" else "🎤  Dictar"
+              }
+
+              private fun rowParams(weight: Float): LinearLayout.LayoutParams =
+                  LinearLayout.LayoutParams(0, dp(52), weight).apply {
+                      setMargins(dp(4), 0, dp(4), 0)
+                  }
+
+              private fun makeButton(label: String, color: String, onClick: () -> Unit): Button {
+                  val button = Button(this)
+                  button.text = label
+                  button.isAllCaps = false
+                  button.textSize = 16f
+                  button.setTextColor(Color.WHITE)
+                  val shape = GradientDrawable()
+                  shape.setColor(Color.parseColor(color))
+                  shape.cornerRadius = dp(12).toFloat()
+                  button.background = shape
+                  button.setOnClickListener { onClick() }
+                  return button
+              }
+
+              companion object {
+                  private const val READY_MESSAGE = "Toca el micrófono para dictar"
+              }
+          }
+          __FIN_ARCHIVO__
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Crear clave de depuración
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore \
+              -storepass android -keypass android -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Compilar APK
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TecladoVoz-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
